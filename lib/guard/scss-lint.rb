@@ -11,6 +11,8 @@ module Guard
     def self.non_namespaced_name
       'scss-lint'
     end
+    
+    attr_reader :config
 
     def initialize(options = {})
       super
@@ -53,36 +55,32 @@ module Guard
     end
 
     private
-
+    
     def run(paths = [])
-      @scss_lint_runner = SCSSLint::Runner.new @config
-      paths = paths.reject { |p| @config.excluded_file?(p) }.map { |path| { path: path } }
-      @scss_lint_runner.run paths
-      @scss_lint_runner.lints.each do |lint|
-        UI.send lint.severity, lint_message(lint)
-      end
-      UI.info "Guard::ScssLint inspected #{paths.size} files, found #{@scss_lint_runner.lints.count} errors."
+      scss_lint_runner = SCSSLint::Runner.new config
+      paths = paths.reject { |p| config.excluded_file?(p) }.map { |path| { path: path } }
+      scss_lint_runner.run paths
+
+      report_lints(scss_lint_runner.lints, paths)
+
+      UI.info "Guard::ScssLint inspected #{paths.size} files, found #{scss_lint_runner.lints.count} errors."
     end
 
-    def lint_message(lint)
-      [lint.filename.color(:cyan),
-       ':',
-       lint.location.line.to_s.color(:magenta),
-       ':',
-       lint.location.column.to_s.color(:blue),
-       ' ',
-       lint_severity_abbrevation(lint),
-       ' ',
-       lint.linter.name.color(:green),
-       ':'.color(:green),
-       ' ',
-       lint.description
-      ].join
+    def report_lints(lints, files)
+      sorted_lints = lints.sort_by { |l| [l.filename, l.location] }
+      results = SCSSLint::Reporter::DefaultReporter.new(sorted_lints, files, scss_lint_logger).report_lints
+
+      return unless results
+
+      UI.info results
     end
 
-    def lint_severity_abbrevation(lint)
-      color = lint.severity == :error ? :red : :yellow
-      ['[', lint.severity.to_s[0].upcase, ']'].join.color(color)
+    def scss_lint_logger
+      return @scss_lint_logger if @scss_lint_logger
+
+      @scss_lint_logger = SCSSLint::Logger.new(STDOUT)
+      @scss_lint_logger.color_enabled = true
+      @scss_lint_logger
     end
   end
 end
